@@ -145,7 +145,9 @@ class Document{
 
      */
     public function insert(Document $document): string {
+        global $error;
         $this->error = '';
+        $error = '';
         if ($this->header->id != '') {
             $headerChange = false;
             $document->deleted = false;
@@ -161,6 +163,7 @@ class Document{
             $document->id = $newNode->id;
             $result = $newNode->id;
             foreach ($this->indexes as $indexFieldName => $indexRootNode) {
+              $error = '';  
               if (isset($document->$indexFieldName)) {
                 $value = $this->hun($document->$indexFieldName);
                 if ($indexRootNode != '') {
@@ -172,6 +175,7 @@ class Document{
                     $this->header->data->indexes->$indexFieldName = $indexNode->id;
                     $headerChange = true;
                 }
+                $this->error .= $error;
                }
             }
             if ($headerChange) {
@@ -181,6 +185,10 @@ class Document{
             $result = '';
             $this->error = 'COLLECTION NOT FOUND';
         }    
+        if ($this->error != '') {
+            // valamelyik index épitése közben hiba történt
+            $this->startRepare($result);
+        }
         return $result;
     }
 
@@ -262,6 +270,9 @@ class Document{
      * @return bool
      */
     public function updateById(string $id, Document $document): bool {
+        global $error;
+        $error = '';
+        $this->error = '';
         if ($this->header->id != '') {
             // oldrec beolvasása
             $dataNode = BtreeNode::readFromDB($id);
@@ -276,6 +287,7 @@ class Document{
                     }
                     $dataNode->saveToDB();
                     foreach  ($this->indexes as $indexFieldName => $indexRoot) {
+                        $error = '';
                         if ((isset($oldRec->$indexFieldName)) && (!isset($document->$indexFieldName))) {
                             $this->delIndexItem($indexRoot, $oldRec->$indexFieldName, $id);
                         } else if ((!isset($oldRec->$indexFieldName)) && (isset($document->$indexFieldName))) {
@@ -288,8 +300,13 @@ class Document{
                             $value = $this->hun($document->$indexFieldName);
                             $indexRoot->insertChild($value,$dataNode->id);
                         }
+                        $this->error .= $error;
                     }
-                    $result = true;
+                    if ($this->error != '') {
+                        // valamelyik index modosítás közben hiba történt
+                        $this->startRepare($id);
+                    }
+                    $result = ($this->error == '');
                 } else {    
                     $result = false;
                     $this->error = 'DELETED';
@@ -410,12 +427,20 @@ class Document{
                     if ($dataNode->id != '') {
                         $rec = $dataNode->data;
                         $rec->id = $dataNode->id;
-                        if ($rec->deleted == false) {
+                        if (($rec->deleted == false) & ($rec->$indexFieldName == $node->value)) {
                             if ($this->whereCheck($rec)) {
                                 $result[] = $rec;
                             }    
+                        } else if (($rec->deleted == false) & ($indexFieldName != 'id')) {
+                            // a beolvasott dataNode -ban nem az index->value adat szerepel,
+                            // egy korábbi modosítás nem fejezödött be teljesen
+                            $this->startRepare($rec->id);
                         }
-                    }    
+                    } else {
+                        // az index->data nem létező dataNode -ra mutat
+                        $node->data = '';
+                        $node->writeToDB();
+                    }   
                 }
                 $node = $node->getNext();
             }
@@ -566,6 +591,13 @@ class Document{
         $this->expression = [];
         return $result;
 
+    }
+
+    /**
+     * a paraméterben adott id-ü adat indexeinek ellenörzése, javítása.
+     */
+    public function startRepare(string $id) {
+        echo 'startRepare '.$id."\n"; exit();
     }
  }
 

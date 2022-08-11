@@ -2,7 +2,7 @@
 
 global $items,$error;
 $items = [];
-$error = 'OK';
+$error = '';
 
 if (file_exists('onefiledb.dat')) {
     $items = file('onefiledb.dat');

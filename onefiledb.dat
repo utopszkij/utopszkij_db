@@ -1,0 +1,40 @@
+{"id":"0","parent":"","left":"1","right":"","value":"root","data":{"root":"root"}}
+{"id":"1","parent":"0","left":"33","right":"","value":"collection_test1","data":{"indexes":{"id":"3","name":"4"},"dataRoot":"2"}}
+{"id":"2","parent":"","left":"11","right":"5","value":"175786774","data":{"deleted":true,"id":""}}
+{"id":"3","parent":"","left":"","right":"6","value":"2","data":""}
+{"id":"4","parent":"","left":"7","right":"13","value":"Teszt Elek","data":""}
+{"id":"5","parent":"2","left":"26","right":"8","value":"389592522","data":{"name":"Gipsz Jakab","phone":"+36301234567","deleted":false}}
+{"id":"6","parent":"3","left":"","right":"9","value":"5","data":"5"}
+{"id":"7","parent":"4","left":"25","right":"10","value":"Gipsz Jakab","data":"5"}
+{"id":"8","parent":"5","left":"","right":"14","value":"857525043","data":{"name":"Noname","phone":"none","deleted":false}}
+{"id":"9","parent":"6","left":"","right":"12","value":"8","data":"8"}
+{"left":"","right":"","parent":"7","value":"Noname","data":"8","id":10}
+{"id":"11","parent":"2","left":"17","right":"","value":"157106057","data":{"name":"zzzz","deleted":false}}
+{"id":"12","parent":"9","left":"","right":"15","value":"11","data":"11"}
+{"id":"13","parent":"4","left":"19","right":"16","value":"zzzz","data":"11"}
+{"id":"14","parent":"8","left":"","right":"23","value":"944686694","data":{"name":"élet","deleted":false}}
+{"id":"15","parent":"12","left":"","right":"18","value":"14","data":"14"}
+{"id":"16","parent":"13","left":"28","right":"","value":"élet","data":"14"}
+{"id":"17","parent":"11","left":"20","right":"","value":"68395981","data":{"name":"javitva","deleted":false,"id":"17"}}
+{"id":"18","parent":"15","left":"","right":"21","value":"17","data":"17"}
+{"id":"19","parent":"13","left":"22","right":"29","value":"gggg","data":""}
+{"left":"","right":"","parent":"17","value":"26132321","data":{"name":"aaaa","deleted":false},"id":20}
+{"id":"21","parent":"18","left":"","right":"24","value":"20","data":"20"}
+{"left":"","right":"","parent":"19","value":"aaaa","data":"20","id":22}
+{"id":"23","parent":"14","left":"","right":"","value":"980383823","data":{"deleted":true,"id":""}}
+{"id":"24","parent":"21","left":"","right":"27","value":"23","data":""}
+{"id":"25","parent":"7","left":"","right":"","value":"ELEMÉR","data":""}
+{"left":"","right":"","parent":"5","value":"266930860","data":{"name":"Éva","deleted":false},"id":26}
+{"left":"","right":"","parent":"24","value":"26","data":"26","id":27}
+{"left":"","right":"","parent":"16","value":"Éva","data":"26","id":28}
+{"left":"","right":"","parent":"19","value":"javitva","data":"17","id":29}
+{"id":"30","parent":"","left":"31","right":"32","value":"+36302106501","data":"2"}
+{"left":"","right":"","parent":"30","value":"+36301234567","data":"5","id":31}
+{"left":"","right":"","parent":"30","value":"none","data":"8","id":32}
+{"id":"33","parent":"1","left":"","right":"","value":"collection_addresses","data":{"indexes":{"id":"35"},"dataRoot":"34"}}
+{"id":"34","parent":"","left":"36","right":"38","value":"510744390","data":{"name":"Gipsz Jakab","type":"ideiglenes","irsz":"1027","addr":"Szász Károly u 10","deleted":false,"id":"34"}}
+{"id":"35","parent":"","left":"","right":"37","value":"34","data":"34"}
+{"left":"","right":"","parent":"34","value":"498408694","data":{"name":"Gipsz Jakab","type":"allando","irsz":"1036","addr":"Nagy u 26","deleted":false},"id":36}
+{"id":"37","parent":"35","left":"","right":"39","value":"36","data":"36"}
+{"left":"","right":"","parent":"34","value":"649393847","data":{"name":"élet","type":"allando","irsz":"1119","addr":"Kiss u 3","deleted":false},"id":38}
+{"left":"","right":"","parent":"37","value":"38","data":"38","id":39}

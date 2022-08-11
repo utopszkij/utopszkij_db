@@ -68,7 +68,8 @@ class Storage {
 	        $i++;
       }
       if (($i < LOOPLIMIT) & ($error == 'OK')) {
-            return $result;
+         $error = '';
+         return $result;
       } else {
             echo 'Hiba lépett fel ('.$i.') '.$error.'<br />';
             return '';
@@ -104,8 +105,12 @@ class Storage {
 	        sleep(0.1);
 	        $i++;
       }
-      if (($i >= LOOPLIMIT) | ($error != 'OK')) {
-            echo 'Hiba lépett fel ('.$i.') '.$error.'<br />';
+      if (($i < LOOPLIMIT) & ($error == 'OK')) {
+         $error = '';
+         return $result;
+      } else {
+         echo 'Hiba lépett fel ('.$i.') '.$error.'<br />';
+         return $result;
       }
     } // update
 
@@ -140,6 +145,7 @@ class Storage {
 	        $i++;
       }
       if (($i < LOOPLIMIT) & ($error == 'OK')) {
+         $error = '';
          if (is_array($result) & (count($result) > 0)) {
             $result = JSON_decode($result[0]);
          } else {
