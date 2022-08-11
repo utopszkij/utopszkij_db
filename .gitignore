@@ -1,0 +1,12 @@
+config.php
+.phpunit.result.cache
+.project
+*.bfproject
+.buildpath
+node-modules
+node-modules/*
+vendor
+vendor/*
+vendor/**
+ganache-2.5.4-linux-x86_64.AppImage
+
