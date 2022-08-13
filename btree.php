@@ -1,5 +1,8 @@
 <?php
 
+global $storeError;
+$storeError = '';
+
 /**
  * Btree kezelő
  * törlés ezen a szinet nincs kmegvalósítva
@@ -10,6 +13,7 @@ class BtreeNode extends Storage {
     public string $parent;
     public string $id;
     public string $value;
+    public $error;
     public $data;
 
     function __construct(string $value, $data) {
@@ -19,6 +23,7 @@ class BtreeNode extends Storage {
         $this->id = '';
         $this->value = $value;
         $this->data = $data;
+        $this->error = '';
     }
 
     /**
@@ -27,7 +32,8 @@ class BtreeNode extends Storage {
      * @return BtreeNode
      */
     public static function readFromDB(string $id): BtreeNode {
-        global $error;
+        global $storeError;
+        $storeError = '';
         $rec = BtreeNode::read($id);
         if (($rec) && (isset($rec->value))) {
           $node = new BtreeNode($rec->value, $rec->data);
@@ -37,7 +43,7 @@ class BtreeNode extends Storage {
           $node->parent =$rec->parent;
         } else {
           $node = new BtreeNode('', '');
-          $error = 'BTREE NODE NOT FOUND';
+          $this->error = 'BTREE NODE NOT FOUND';
         }
         return $node;
     }
@@ -46,6 +52,8 @@ class BtreeNode extends Storage {
      * node tárolása a $storage -ba
      */
     public function saveToDB():bool {
+        global $storeError;
+        $storeError = '';
         if ($this->id != '') {
             $this->update($this->id, [
                 "id" => $this->id,
@@ -64,7 +72,8 @@ class BtreeNode extends Storage {
                 "data" => $this->data
             ]);    
         }    
-        return true;
+        $this->error = $storeError;
+        return ($storeError == '');
     }
 
     /**
@@ -74,13 +83,17 @@ class BtreeNode extends Storage {
      * @return BtreeNode
      */
     public function insertChild(string $value, $data):BtreeNode {
+        global $storeError;
+        $storeError = '';
         if ($value <= $this->value) {
             if ($this->left == '') {
                 $newNode = new BtreeNode($value, $data);
                 $newNode->parent = $this->id;
                 $newNode->saveToDB();
-                $this->left = $newNode->id;
-                $this->saveToDB();
+                if ($storeError == '') {
+                    $this->left = $newNode->id;
+                    $this->saveToDB();
+                }    
                 return $newNode;
             } else {
                 $left = $this->readFromDB($this->left);
@@ -92,8 +105,10 @@ class BtreeNode extends Storage {
                 $newNode = new BtreeNode($value, $data);
                 $newNode->parent = $this->id;
                 $newNode->saveToDB();
-                $this->right = $newNode->id;
-                $this->saveToDB();
+                if ($storeError == '') {
+                    $this->right = $newNode->id;
+                    $this->saveToDB();
+                }    
                 return $newNode;
             } else {
                 $right = $this->readFromDB($this->right);
@@ -219,69 +234,35 @@ class BtreeNode extends Storage {
         return $result;
     }
 
+    /**
+     * Az aktuális elem alatti teljes  btree fa + az aktuális elem tartalmának elérése
+     * @return array [data, data, ....]
+     */
+    public function all(): array {
+        if (($this->left == '') & ($this->right == '')) {
+            return [$this->data];
+        }
+        if ($this->left != '') {
+            if (is_string($this->left)) {
+                $left = BtreeNode::readFromDB($this->left);
+            }  else {
+                $left = $this->left;
+            }  
+            $result = $left->all();
+        }
+        $result[] = $this->data;
+        if ($this->right != '') {
+            if (is_string($this->right)) {
+                $right = BtreeNode::readFromDB($this->right);
+            } else {
+                $right = $this->right;
+            }   
+            $result = array_merge($result, $right->all());
+        }
+        return $result;
+    }
+
 }
 
-/*
- * TEST
-  
-
- $root = new BtreeNode('root','root');
- $root->saveToDB();
- for ($i = 0; $i < 25; $i++) {
-    $root->insertChild((string)rand(1000,9999),'data'.$i);
- }
- $root->insertChild('1953','data1953');
- $root->insertChild('1954','data1953');
- $root->insertChild('2314','data1953');
- for ($i = 26; $i < 51; $i++) {
-    $root->insertChild((string)rand(1000,9999),'data'.$i);
- }
- $root->insertChild('1953','data1953');
- $root->insertChild('1954','data1953');
- $root->insertChild('2314','data1953');
- for ($i = 52; $i < 81; $i++) {
-    $root->insertChild((string)rand(1000,9999),'data'.$i);
- }
- $root->insertChild('1953','data1953');
- $root->insertChild('1954','data1953');
- $root->insertChild('2314','data1953');
- 
- echo JSON_encode($storage->items, JSON_PRETTY_PRINT)."\n\n\n";
-
-
- // find test
- $node = $root->find('1953');
- echo 'find 1953:'.JSON_encode($node)."\n";
- $node = $root->find('000');
- echo 'find 000:'.JSON_encode($node)."\n";
-
- // soros elérés test ASC
- echo 'soros elérés ASC'."\n";
- $cc = 0;
- $node = $root->getFirstChild();
- if ($node->id == '') {
-    $node = $root;
- }
- while ($node->id != '') {
-    echo JSON_encode($node)."\n";
-    $node = $node->getNext();
-    $cc++;
- }
- echo "================== cc=".$cc."\n";
- 
- // soros elérés test DESC
- echo 'soros elérés DESC'."\n";
- $cc = 0;
- $node = $root->getLastChild();
- if ($node->id == '') {
-    $node = $root;
- }
- while ($node->id != '') {
-    echo JSON_encode($node)."\n";
-    $node = $node->getPrevious();
-    $cc++;
- }
- echo "================== cc=".$cc."\n";
- */
 
 ?>

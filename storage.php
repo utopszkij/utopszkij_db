@@ -21,7 +21,7 @@ define('ABI','[..]');
 define('BYTECODE','0x.....');
 */
 
-global $eth3, $result, $error;
+global $eth3, $result, $storeError;
 
 class Storage {
 
@@ -31,47 +31,47 @@ class Storage {
      * @return string új id
      */
     public static function write($record): string {
-      global $error, $result, $web3;
-      $error = 'working';
+      global $storeError, $result, $web3;
+      $storeError = 'working';
 
       // új okoszerződés létrehozása a blokklánon
       $eth = $web3->eth;
       $contract = new Contract($web3->provider, ABI);
-      $contract->bytecode(BYTECODE)->new(JSON_encode($record, JSON_UNESCAPED_UNICODE), [
+      $contract->bytecode(BYTECODE)->new(gzencode(JSON_encode($record, JSON_UNESCAPED_UNICODE)), [
 				'from' => ACCOUNT,
 				'gas' => GAS],
       function ($err, $_result) use ($contract) {
-         global $error, $result, $web3;
+         global $storeError, $result, $web3;
          if ($err == null) {
             // új okoszerződés address lekérdezése
             $contract->eth->getTransactionReceipt($_result,
 	        function ($err, $_result) use ($contract) {
-               global $error, $result;
+               global $storeError, $result;
                if ($err == null) {
-                    $error = 'OK';
+                    $storeError = 'OK';
                     $result = $_result->contractAddress;
                } else {
-                    $error = $err->getMessage();
+                    $storeError = $err->getMessage();
                     $result = false;
                }
              });
           } else {
-             $error = $err->getMessage();
+             $storeError = $err->getMessage();
              $result = false;
           }
       });
 
       // várakozás az aszinkron funkciók végrehajtására
       $i = 0;
-      while (($i < LOOPLIMIT) & ($error == 'working')) {
+      while (($i < LOOPLIMIT) & ($storeError == 'working')) {
 	        sleep(0.1);
 	        $i++;
       }
-      if (($i < LOOPLIMIT) & ($error == 'OK')) {
-         $error = '';
+      if (($i < LOOPLIMIT) & ($storeError == 'OK')) {
+         $storeError = '';
          return $result;
       } else {
-            echo 'Hiba lépett fel ('.$i.') '.$error.'<br />';
+            echo 'Hiba lépett fel ('.$i.') '.$storeError.'<br />';
             return '';
       }
     } // write
@@ -82,36 +82,33 @@ class Storage {
      * @param $record
      */
     public static function update(string $id, $record) {
-      global $error, $result, $web3;
-	  $error = 'working';
+      global $storeError, $result, $web3;
+	  $storeError = 'working';
       // okosszerződés method hívás
 	  $eth = $web3->eth;
       $contract = new Contract($web3->provider, ABI);
-      $contract->at($id)->send('update', JSON_encode($record, JSON_UNESCAPED_UNICODE), [
+      $contract->at($id)->send('update', gzencode(JSON_encode($record, JSON_UNESCAPED_UNICODE)), [
            'from' => ACCOUNT,
            'gas' => GAS],
       function ($err, $_result) {
-           global $error, $result;
+           global $storeError, $result;
            if ($err == null) {
-              $error = 'OK';
+              $storeError = 'OK';
            } else {
-              $error = $err->getMessage();
+              $storeError = $err->getMessage();
               $result = false;
            }
       });
       // várakozás az aszinkron hívás válaszára
       $i = 0;
-      while (($i < LOOPLIMIT) & ($error == 'working')) {
+      while (($i < LOOPLIMIT) & ($storeError == 'working')) {
 	        sleep(0.1);
 	        $i++;
       }
-      if (($i < LOOPLIMIT) & ($error == 'OK')) {
-         $error = '';
-         return $result;
-      } else {
-         echo 'Hiba lépett fel ('.$i.') '.$error.'<br />';
-         return $result;
+      if (($i >= LOOPLIMIT) | ($storeError != 'OK')) {
+            echo 'Hiba lépett fel ('.$i.') '.$storeError.'<br />';
       }
+      $storeError = '';
     } // update
 
     /**
@@ -120,8 +117,8 @@ class Storage {
      * @return object $record
      */
     public static function read(string $id) {
-      global $error, $result, $web3;
-	  $error = 'working';
+      global $storeError, $result, $web3;
+	  $storeError = 'working';
       // okosszerződés method hívás
 	  $eth = $web3->eth;
       $contract = new Contract($web3->provider, ABI);
@@ -129,32 +126,42 @@ class Storage {
            'from' => ACCOUNT,
            'gas' => GAS],
       function ($err, $_result) {
-           global $error, $result;
+           global $storeError, $result;
            if ($err == null) {
-              $error = 'OK';
+              $storeError = 'OK';
            	  $result = $_result;
            } else {
-              $error = $err->getMessage();
+              $storeError = $err->getMessage();
               $result = false;
            }
       });
       // várakozás az aszinkron hívás válaszára
       $i = 0;
-      while (($i < LOOPLIMIT) & ($error == 'working')) {
+      while (($i < LOOPLIMIT) & ($storeError == 'working')) {
 	        sleep(0.1);
 	        $i++;
       }
-      if (($i < LOOPLIMIT) & ($error == 'OK')) {
-         $error = '';
+      if (($i < LOOPLIMIT) & ($storeError == 'OK')) {
          if (is_array($result) & (count($result) > 0)) {
-            $result = JSON_decode($result[0]);
+            try {
+               $result = JSON_decode(gzdecode($result[0]));
+               $storeError = '';
+            } catch (Exception $e) {
+               $storeError = 'gzdecode_error';
+               $result = new \stdClass();
+               $result->deleted =true;
+               $result->id = '';
+            }      
          } else {
             $result = new \stdClass();
-         }
-      } else {
-            echo 'Hiba lépett fel ('.$i.') '.$error.'<br />';
-            $result = new \stdClass();
+            $result->deleted =true;
+            $result->id = '';
       }
+      } else {
+            $result = new \stdClass();
+            $result->deleted =true;
+            $result->id = '';
+   }
       return $result;
     } // get
 

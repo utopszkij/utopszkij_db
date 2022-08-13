@@ -1,7 +1,7 @@
 <?php
 /**
  * Ez a teszt lokális Ganache teszt blokkláncon
- * kb 30 másodpercig fut és 0.45 ETH -t használ fel.
+ * kb 24 másodpercig fut és 0.39 ETH "gas" -t használ fel.
  */
 global $error, $result, $web3;
 include_once (__DIR__.'/../eth_init.php');
@@ -22,7 +22,7 @@ class CollectionTest extends TestCase {
 		$this->collection->insert(Doc(["name" => "Teszt Elek", "phone" => "+36302106501"]));
 		$this->collection->insert(Doc(["name" => "Gipsz Jakab", "phone" => "+36301234567"]));
 		$this->collection->insert(Doc(["name" => "Noname", "phone" => "none"]));
-		$this->collection->insert(Doc(["name" => "zzzz"]));
+		$this->collection->insert(Doc(["name" => "zzzz", "phone" => "zzzz"]));
 		$this->collection->insert(Doc(["name" => "élet"]));
 		$this->collection->insert(Doc(["name" => "gggg"]));
 		$this->collection->insert(Doc(["name" => "aaaa"]));
@@ -41,7 +41,13 @@ class CollectionTest extends TestCase {
 
     public function test_getByFilter_id_0_none() {
 		$recs = $this->collection->getByFilter('id','','none');
-		$this->assertEquals(count($recs),9);
+		$this->assertEquals(9,count($recs));
+	}
+
+	public function test_getByFilter_name_eq_phone() {
+		$recs = $this->collection->where('name','=','`phone')
+		->getByFilter('id','','none');
+		$this->assertEquals(1,count($recs));
 	}
 
     public function test_getByFilter_name_élet_élet() {
@@ -92,7 +98,7 @@ class CollectionTest extends TestCase {
 	public function test_createIndex() {
 		$recs = $this->collection->createIndex('phone');
 		$recs = $this->collection->getByFilter('phone','0','none');
-		$this->assertEquals(3, count($recs));
+		$this->assertEquals(4, count($recs));
 	}	
 
 	public function test_dropIndex() {
@@ -106,7 +112,9 @@ class CollectionTest extends TestCase {
 	}	
 
 	public function test_deleteById() {
-		$recs = $this->collection->all();
+		$recs = $this->collection->where('name','<>','élet')
+		->where('name','<>','Gipsz Jakab')
+		->all();
 		$id = $recs[0]->id;
 		$res = $this->collection->deleteById($id);
 		$this->assertEquals(true, $res);
@@ -229,7 +237,6 @@ class CollectionTest extends TestCase {
 		$this->assertEquals("1031.5", $recs[1]->avgirsz);
 
 	}
-
 
 	public function test_end() {
 		storageSave();

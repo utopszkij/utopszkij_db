@@ -35,7 +35,6 @@ class Where {
             if (substr($condition[2],0,1) == '`') {
                 $valueName = substr($condition[2],1,100);
                 if (!isset($rec->$valueName)) {
-                    echo ' value not found '.$valueName; exit();
                     return false;
                 } else {
                     $condition[2] = $rec->$valueName;

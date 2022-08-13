@@ -7,13 +7,13 @@
  *                                            | 
  *                      +--------------------------------------------------+
  *                      |             collectionHeader Btree               |
- *                      | dataRot    indexes->id   indexes->fieldName ...  |
+ *                      |             indexes->id   indexes->fieldName ... |
  *                      +--------------------------------------------------+
- *                           |              |                   | ...
- *                   +-------------+  +-------------+    +--------------+
- *                   | dataDocument|  |indexDocument|    |indexDocument |
- *                   |    Btree    |  |   Btree     |    |    Btree     |
- *                   +-------------+  +-------------+    +--------------+ 
+ *                                           |                   | ...
+ *                   +--------------+  +-------------+    +--------------+
+ *                   | dataDocuments|  |indexDocument|    |indexDocument |
+ *                   |              |  |   Btree     |    |    Btree     |
+ *                   +--------------+  +-------------+    +--------------+ 
  * CollectionHeader {value:"collection_collectionName" data:{dataRoot, indexes:{indexName:indexRoot->id, ... }}}
  * DataDocument  {value: random, data: document}  (id nem mindig van a Document-ben, ill nem mindig jó a tartalma)
  * IndexDocument {value: indexName, data:dataDocument->id}
@@ -23,9 +23,56 @@ include_once 'config.php';
 include_once 'btree.php';
 include_once 'where.php';
 
+global $workers, $storeError;
+
 class Document{
 
 }
+
+/**
+ * Új php szál, az adott collection és $id indexeinek ellenörzése, javítása
+*/
+function indexesRepair(string $collectionName, string $id) {
+
+
+echo 'indexRepair ',$collectionName; exit();
+
+    $rec = BtreeNode::read($id);
+    $headerChange = false;
+    if ($rec) {
+        $collection = new Collection($this->collectionName);
+        if ($collection->header->id != '') {
+            foreach ($this->indexes as $indexName => $indexRootNode) {
+                if (isset($rec->indexName)) {
+                    $recs = $collection->getByFilter($indexName, $rec->indexName, $rec->indexName);
+                    // benne van az $id?
+                    $ok = false;
+                    foreach ($recs as $rec) {
+                        if ($rec->id == $id) {
+                            $ok = true;
+                        }
+                    }
+                    // hanincs akkor indexet kell kreálni
+                    if (!$ok) {
+                        $value = $rec->indexName;
+                        if ($indexRootNode != '') {
+                            $indexRootNode->insertChild($value, $id);
+                        } else {
+                            $indexNode = new BtreeNode($value,$id);
+                            $indexNode->saveToDB();
+                            $this->indexes->$indexFieldName = $indexNode;
+                            $this->header->data->indexes->$indexFieldName = $indexNode->id;
+                            $headerChange = true;
+                        }
+                    }
+                }    
+            }
+            if ($headerChange) {
+                $this->header->saveToDB();
+            }    
+        }
+    }
+}  
 
 
  /**
@@ -90,7 +137,7 @@ class Document{
             foreach ($this->indexes as $indexName => $indexID) {
                 $this->indexes->$indexName = BtreeNode::readFromDB($indexID);
             }
-            $this->dataRoot = BtreeNode::readFromDB($this->header->data->dataRoot);
+            // $this->dataRoot = BtreeNode::readFromDB($this->header->data->dataRoot);
         }
     }
 
@@ -115,7 +162,7 @@ class Document{
      * @param array $indexNames ['fieldname',...]
      */
     public function create(array $indexNames) {
-        global $items;
+        global $items, $storeError;
         $root = BtreeNode::readFromDB(ROOT_ID);
         $header = $root->find('collection_'.$this->collectionName);
         if ($header->id == '') {
@@ -132,11 +179,78 @@ class Document{
                 $headerData->indexes->$indexName = '';
             }
             $this->header = $root->insertChild('collection_'.$this->collectionName, $headerData);
+            $this->error = $storeError;
         } else {
             // már létezik
             $this->error = 'COLLECTION_EXISTS';
         }
     }
+
+    /**
+     * index item logikai törlése
+     */
+    protected function delIndexItem($indexRoot, $value, $data) {       
+        if (is_object($indexRoot)) {                 
+            $indexNode = $indexRoot->find($this->hun($value));
+            while (($indexNode->id != '') & ($indexNode->value == $this->hun($value))) {
+                if ($indexNode->data == $data) {
+                    $indexNode->data = '';
+                    $indexNode->saveToDB();
+                }    
+                $indexNode = $indexNode->getNext();
+            }
+        }
+    }                        
+
+    /**
+    * Új indexItem felvitele
+    * @param string | BtreeNode $indexRoot
+    * @param string $value
+    * @param string $data (id)
+    * @param string $indexFieldName
+    * @return bool headar change?
+    */
+    protected function addIndexItem(&$indexRoot, $value, $data, $indexFieldName) {
+        global $storeError;
+        if ($indexRoot != '') {
+            $indexRoot->insertChild($value, $data);
+            if ($storeError != '') {
+                $this->error = $storeError;
+            }
+            $result = false;
+        } else {
+            $indexRoot = new BtreeNode($value,$data);
+            $indexRoot->saveToDB();
+            if ($storeError != '') {
+                $this->error = $storeError;
+            }
+            $this->indexes->$indexFieldName = $indexRoot;
+            $this->header->data->indexes->$indexFieldName = $indexRoot->id;
+            $result = true;
+        }
+        return $result;
+    }
+
+    /**
+     * collection header tárolása (akkor kell ha változott)
+     */
+    protected function saveHeader() {
+        $storeError = '';
+        $this->header->saveToDB();
+        if ($storeError != '') {
+            // hiba volt a header modosítása közben, próbáljuk újra
+            $i = 0;
+            while (($i < 10) & ($storeError != '')) {
+                $storeError = '';
+                $this->header->saveToDB();
+                $i++;
+            }    
+            if ($storeError != '') {
+                echo 'Fatális hiba a collection header tárolása közben '.$this->collectionName.' '.$storeError; exit();
+            }
+        }
+    }
+
 
     /**
      * Új document kiirása
@@ -145,50 +259,37 @@ class Document{
 
      */
     public function insert(Document $document): string {
-        global $error;
+        global $storeError;
         $this->error = '';
-        $error = '';
         if ($this->header->id != '') {
             $headerChange = false;
             $document->deleted = false;
-            if ($this->dataRoot != '') {
-                $newNode = $this->dataRoot->insertChild(rand(1,999999999),$document);
-            } else {
-                $newNode = new BtreeNode(rand(1,999999999),$document);
-                $newNode->saveToDB();
-                $this->header->data->dataRoot = $newNode->id;
-                $this->dataRoot = $newNode;
-                $headerChange = true;
-            }   
-            $document->id = $newNode->id;
-            $result = $newNode->id;
+            $storeError = '';
+            $newId = BtreeNode::write($document);
+            if ($storeError != '') {
+                $this->error = $storeError;
+                return '';
+            }
+            $document->id = $newId;
+            $result = $newId;
             foreach ($this->indexes as $indexFieldName => $indexRootNode) {
-              $error = '';  
               if (isset($document->$indexFieldName)) {
                 $value = $this->hun($document->$indexFieldName);
-                if ($indexRootNode != '') {
-                    $indexRootNode->insertChild($value, $newNode->id);
-                } else {
-                    $indexNode = new BtreeNode($value,$newNode->id);
-                    $indexNode->saveToDB();
-                    $this->indexes->$indexFieldName = $indexNode;
-                    $this->header->data->indexes->$indexFieldName = $indexNode->id;
-                    $headerChange = true;
-                }
-                $this->error .= $error;
+                $storeError = '';
+                $headerChange = $this->addIndexItem($indexRootNode, $value, $newId, $indexFieldName);
                }
             }
+            if ($this->error != '') {
+                // hiba volt az index építés közben, az indexeket újra kell építeni
+                indexesRepair($this->collectionName, $newId);
+            }
             if ($headerChange) {
-                $this->header->saveToDB();
+                $this->saveHeader();
             }    
         } else {
             $result = '';
             $this->error = 'COLLECTION NOT FOUND';
         }    
-        if ($this->error != '') {
-            // valamelyik index épitése közben hiba történt
-            $this->startRepare($result);
-        }
         return $result;
     }
 
@@ -213,18 +314,10 @@ class Document{
            foreach ($documents as $document) {
                 if (isset($document->$indexName)) {
                     $value = $this->hun($document->$indexName);
-                    if ($indexRootNode != '') {
-                        $indexRootNode->insertChild($value, $document->id);
-                    } else {
-                        $indexRootNode = new BtreeNode($value,$document->id);
-                        $indexRootNode->saveToDB();
-                        $this->indexes->$indexName = $indexRootNode;
-                        $this->header->data->indexes->$indexName = $indexRootNode->id;
-                        $this->header->saveToDB();
-                    }
-                }
+                    $this->addIndexItem($indexRootNode, $value, $document->id, $indexName);
+                }    
             }
-            return;
+            $this->saveHeader();
     }
 
     /**
@@ -245,23 +338,9 @@ class Document{
        }
        unset($this->indexes->$indexName);
        unset($this->header->data->indexes->$indexName);
-       $this->header->saveToDB();
+       $this->saveHeader();
        return;
     }
-
-    /**
-     * index item logikai törlése
-     */
-    protected function delIndexItem($indexRoot, $value, $data) {                        
-        $indexNode = $indexRoot->find($this->hun($value));
-        while (($indexNode->id != '') & ($indexNode->value == $this->hun($value))) {
-            if ($indexNode->data = $data) {
-                $indexNode->data = '';
-                $indexNode->saveToDB();
-            }    
-            $indexNode = $indexNode->getNext();
-        }
-    }                        
 
     /**
      * Document modosítása
@@ -270,43 +349,46 @@ class Document{
      * @return bool
      */
     public function updateById(string $id, Document $document): bool {
-        global $error;
-        $error = '';
+        global $storeError;
         $this->error = '';
         if ($this->header->id != '') {
             // oldrec beolvasása
-            $dataNode = BtreeNode::readFromDB($id);
-            if ($dataNode->id != '') {
-                $oldRec = clone $dataNode->data;
+            $oldRec = BtreeNode::read($id);
+            if ($oldRec) {
                 $oldRec->id = $id;
                 if ($oldRec->deleted == false) {
-                    $oldRec->id = $dataNode->id;
-                    $document->id = $dataNode->id;
-                    foreach ($document as $fn => $fv) {
-                        $dataNode->data->$fn = $fv;
+                    $document->id = $id;
+                    $newRec = $document;
+                    $newRec->id = $id;
+                    $newRec->deleted = $oldRec->deleted;
+                    $storeError = '';
+                    BtreeNode::update($id, $newRec);
+
+                    if ($storeError != '') {
+                        $this->error = $storeError;
+                        return false;
                     }
-                    $dataNode->saveToDB();
-                    foreach  ($this->indexes as $indexFieldName => $indexRoot) {
-                        $error = '';
-                        if ((isset($oldRec->$indexFieldName)) && (!isset($document->$indexFieldName))) {
+                    foreach  ($this->indexes as $indexFieldName => $indexRoot)  {
+                        $storeError = '';
+                        if ((isset($oldRec->$indexFieldName)) && (!isset($newRec->$indexFieldName))) {
                             $this->delIndexItem($indexRoot, $oldRec->$indexFieldName, $id);
-                        } else if ((!isset($oldRec->$indexFieldName)) && (isset($document->$indexFieldName))) {
+                        } else if ((!isset($oldRec->$indexFieldName)) && (isset($newRec->$indexFieldName))) {
                             $value = $this->hun($document->$indexFieldName);
-                            $indexRoot->insertChild($value,$dataNode->id);
-                        } else if ((!isset($oldRec->$indexFieldName)) && (!isset($document->$indexFieldName))) {
+                            $this->addIndexItem($indexRoot, $value, $dataNode->id, $indexFieldName);
+                        } else if ((!isset($oldRec->$indexFieldName)) && (!isset($newRec->$indexFieldName))) {
                             ; // nincs teendő
-                        } else if ($oldRec->$indexFieldName != $document->$indexFieldName) {
+                        } else if ($oldRec->$indexFieldName != $newRec->$indexFieldName) {
                             $this->delIndexItem($indexRoot, $oldRec->$indexFieldName, $id);
                             $value = $this->hun($document->$indexFieldName);
-                            $indexRoot->insertChild($value,$dataNode->id);
+                            $this->addIndexItem( $indexRoot, $value, $document->id, $indexFieldName );
                         }
-                        $this->error .= $error;
+                        if ($this->error != '') {
+                            // hiba volt valamelyik index modosítása közben, az indexeket újra kell építeni!
+                            indexesRepair($this->collectionName, $id);
+                        }
                     }
-                    if ($this->error != '') {
-                        // valamelyik index modosítás közben hiba történt
-                        $this->startRepare($id);
-                    }
-                    $result = ($this->error == '');
+                    $this->saveHeader();
+                    $result = true;
                 } else {    
                     $result = false;
                     $this->error = 'DELETED';
@@ -331,19 +413,18 @@ class Document{
         $result = false;
         if ($this->header->id != '') {
             // oldrec beolvasása
-            $dataNode = BtreeNode::readFromDB($id);
-            $oldRec = clone $dataNode->data;
+            $oldRec = BtreeNode::read($id);
             $oldRec->id = $id;
-            if ($dataNode->id != '') {
-                $dataNode->data = new \stdClass();
-                $dataNode->data->deleted = true;
-                $dataNode->data->id = '';
-                $dataNode->saveToDB();
+            if ($oldRec) {
                 foreach  ($this->indexes as $indexFieldName => $indexRoot) {
                     if (isset($oldRec->$indexFieldName)) {
                         $this->delIndexItem($indexRoot, $oldRec->$indexFieldName, $id);
                     }    
                 }
+                $oldRec = new \stdClass();
+                $oldRec->id = $id;
+                $oldRec->deleted = true;
+                BtreeNode::update($id, $oldRec);
                 $result = true;
             } else {
                 $result = false;
@@ -365,15 +446,15 @@ class Document{
     public function getById(string $id) {
         $result = new \stdClass();
         if ($this->header->id != '') {
-            $dataNode = BtreeNode::readFromDB($id);
-            if ($dataNode->id != '') {
-                $result = $dataNode->data;
-                $result->id = $dataNode->id; 
+            $result = BtreeNode::read($id);
+            if ($result) {
+                $result->id = $id; 
                 if ($result->deleted) {
                     $result = new \stdClass();
                     $this->error = 'NOT FOUND';
                 }
             } else {
+                $result = new \stdClass();
                 $this->error = 'NOT FOUND';
             }    
         } else {
@@ -394,6 +475,7 @@ class Document{
     public function getByFilter(string $indexFieldName,
         string $minValue,
         string $maxValue) {
+        global $workers;    
         $minValue =  $this->hun($minValue);   
         $maxValue =  $this->hun($maxValue);   
         $result = [];
@@ -404,46 +486,69 @@ class Document{
                   $maxValue = 'none';
             }
             $indexRoot = $this->indexes->$indexFieldName;
-            $node = $indexRoot->find($minValue);
-            if ($node->id == '') {
-                $node = $indexRoot->getFirstChild();
-            } else {
-                while (($node->id != '') & ($node->value == $minValue)) {
-                    $node = $node->getPrevious();
+            if ($indexRoot == '') {
+                return [];
+            }
+            if (($minValue == '') & ($maxValue == 'none')) {
+                // Egyszerüsített keresés BtreeNode->all használatával
+                // minValue, maxValue és inde x éppség elenörzés nélkül
+                $ids = $indexRoot->all();
+                foreach ($ids as $id) {
+                    if ($id != '') { 
+                        $rec = BtreeNode::read($id);
+                        if ($rec) {
+                            $rec->id = $id;
+                            if ($rec->deleted == false) {
+                                if ($this->whereCheck($rec)) {
+                                    $result[] = $rec;
+                                }    
+                            }
+                        }    
+                    }
                 }
+            } else {
+                // keresés index szerint minvalue, maxValue használatával,
+                // index éppség ellenörzéssel
+                $node = $indexRoot->find($minValue);
                 if ($node->id == '') {
                     $node = $indexRoot->getFirstChild();
+                } else {
+                    while (($node->id != '') & ($node->value == $minValue)) {
+                        $node = $node->getPrevious();
+                    }
+                    if ($node->id == '') {
+                        $node = $indexRoot->getFirstChild();
+                    }
+                }   
+                if ($node->id == '') {
+                    $node = $indexRoot;
                 }
-            }   
-            if ($node->id == '') {
-                $node = $indexRoot;
-            }
-            while (($node->id != '') &
-                   (($node->value <= $maxValue) | ($maxValue == 'none'))) {
-                if (($node->data != '') & 
-                    ($node->value != 'key_'.$this->collectionName.'_'.$indexFieldName) &
-                    ($node->value >= $minValue)) {
-                    $dataNode = BtreeNode::readFromDB($node->data);
-                    if ($dataNode->id != '') {
-                        $rec = $dataNode->data;
-                        $rec->id = $dataNode->id;
-                        if (($rec->deleted == false) & ($rec->$indexFieldName == $node->value)) {
-                            if ($this->whereCheck($rec)) {
-                                $result[] = $rec;
-                            }    
-                        } else if (($rec->deleted == false) & ($indexFieldName != 'id')) {
-                            // a beolvasott dataNode -ban nem az index->value adat szerepel,
-                            // egy korábbi modosítás nem fejezödött be teljesen
-                            $this->startRepare($rec->id);
-                        }
-                    } else {
-                        // az index->data nem létező dataNode -ra mutat
-                        $node->data = '';
-                        $node->writeToDB();
-                    }   
+                while (($node->id != '') &
+                    (($node->value <= $maxValue) | ($maxValue == 'none'))) {
+                    if (($node->data != '') & 
+                        ($node->value != 'key_'.$this->collectionName.'_'.$indexFieldName) &
+                        ($node->value >= $minValue)) {
+                        $rec = BtreeNode::read($node->data);
+                        if ($rec) {
+                            $rec->id = $node->data;
+                            if ($rec->deleted == false) {
+                                if ($rec->$indexFieldName == $node->value) {
+                                    if ($this->whereCheck($rec)) {
+                                        $result[] = $rec;
+                                    }
+                                } else {
+                                    // sérült index btree !
+                                    $node->data = '';
+                                    $node->saveToDB();
+                                    // $rec->id indexeit ellnörizni, újra építeni kell.
+                                    indexesRepair($this->collectionName, $rec->id);
+                                }        
+                            }
+                        }    
+                    }
+                    $node = $node->getNext();
                 }
-                $node = $node->getNext();
-            }
+            } // egyszerüsített vagy normál keresés
         } else {
             $this->error = 'COLLECTION NOT FOUND';
         }    
@@ -590,14 +695,6 @@ class Document{
         }
         $this->expression = [];
         return $result;
-
-    }
-
-    /**
-     * a paraméterben adott id-ü adat indexeinek ellenörzése, javítása.
-     */
-    public function startRepare(string $id) {
-        echo 'startRepare '.$id."\n"; exit();
     }
  }
 
